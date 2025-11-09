@@ -2,6 +2,7 @@ import { userModel } from "../models/userSchema.js";
 import { redisClient } from "../utils/redisConfig.js";
 import bcrypt from 'bcrypt';
 import nodemailer from 'nodemailer';
+import jwt from 'jsonwebtoken';
 
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
@@ -97,41 +98,96 @@ const handleEmailOTP = async (req, res) => {
 }
 
 const handlePasswordReset = async (req, res) => {
-    let { email } = req.body;
+    try {
+        let { email } = req.body;
 
-    if (!email) throw ("Invalid Email !")
+        if (!email) throw ("Invalid Email !");
 
-    let user = await userModel.findOne({ "email.userEmail": email })
+        let user = await userModel.findOne({ "email.userEmail": email });
 
-    if (!user) throw ("User not exist. Please register first!")
+        if (!user) throw ("User not exist. Please register first!");
 
-    await sendEmail(email)
+        await sendEmail(email);
 
-    res.status(200).json({ message: "Password reset OTP sent to you email!" })
-
+        res.status(200).json({ message: "Password reset OTP sent to your email!" });
+    } catch (err) {
+        console.log("Error in handlePasswordReset:", err);
+        res.status(400).json({ message: "Unable to process password reset", err });
+    }
 }
+
 
 
 const verifyPasswordResetOTP = async (req, res) => {
-    let { email, otp, password } = req.body;
+    try {
+        let { email, otp, password } = req.body;
 
-    if (!email || !otp || !password) throw ("Invalid input data!")
+        if (!email || !otp || !password) throw ("Invalid input data!");
 
-    let user = await userModel.findOne({ "email.userEmail": email })
+        let user = await userModel.findOne({ "email.userEmail": email });
+        if (!user) throw ("User not found!");
 
-    if (!user) throw ("User not found!")
+        let storedOtp = await redisClient.get(`user.${email}`);
+        if (!storedOtp) throw ("Invalid or Expired OTP");
+        if (storedOtp != otp) throw ("OTP didn't match!");
 
-    let storedOtp = await redisClient.get(`user.${email}`)
+        let hashedPassword = await bcrypt.hash(password, 12);
+        await userModel.updateOne({ "email.userEmail": email }, { "password": hashedPassword });
 
-    if (!storedOtp) throw ("Invalid or Expired OTP")
+        await redisClient.del(`user.${email}`); // optional but recommended cleanup
 
-    if (storedOtp != otp) throw ("OTP didn't match!")
+        res.status(200).json({ message: "Password reset successfully!" });
+    } catch (err) {
+        console.log("Error in verifyPasswordResetOTP:", err);
+        res.status(400).json({ message: "Unable to reset password", err });
+    }
+};
 
-    let hashedPassword = await bcrypt.hash(password, 12);
 
-    await userModel.updateOne({ "email.userEmail": email }, { "password": hashedPassword })
 
-    res.status(200).json({message: "Password reset successfully !"});
+
+const handleLogin = async(req,res) => {
+    try{
+        let {email,password} = req.body;
+
+        if(!email || !password) throw("Invalid Data.")
+
+        let user = await userModel.findOne({ "email.userEmail": email})
+
+        if(!user) throw ("unable to find user. Please register first!");
+
+        let comparePassword = await bcrypt.compare(password,user.password)
+
+        if(!comparePassword) throw("Invalid email/password");
+
+        let tokenPayload = {
+            email: user.email.userEmail,
+            name: user.name
+        }
+
+        let options = {
+            expiresIn: '12h'
+        }
+
+        let token = jwt.sign(tokenPayload, process.env.JWT_SECRET,options)
+
+        res.status(202).json({ message: "login was successful !", token})
+    }catch(err){
+        console.log("Unable to login", err);
+        res.status(400).json({ message: "Login Failed!", err})
+    }
 }
 
-export { handleUserRegistration, handleEmailOTP, handlePasswordReset, verifyPasswordResetOTP };
+const getUserInfo = async(req,res) => {
+    try{
+       let user = req.user
+
+       if(!user) throw ("No user was setup !")
+
+       res.status(200).json({message: "Got user data!", user})
+    }catch(err){
+       res.status(400).json({ message: "Cannot send user data at this time!", err});
+    }
+}
+
+export { handleUserRegistration, handleEmailOTP, handlePasswordReset, verifyPasswordResetOTP, handleLogin, getUserInfo };

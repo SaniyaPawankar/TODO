@@ -1,5 +1,6 @@
 import express from 'express';
-import {handleUserRegistration, handleEmailOTP, handlePasswordReset, verifyPasswordResetOTP} from '../controllers/userController.js';
+import {handleUserRegistration, handleEmailOTP, handlePasswordReset, verifyPasswordResetOTP, handleLogin, getUserInfo} from '../controllers/userController.js';
+import { authUser } from '../middlewares/authUser.js';
 
 const userRouter = express.Router();
 
@@ -9,7 +10,11 @@ userRouter.post('/register', handleUserRegistration);
 
 userRouter.post("/verifyEmailOTP", handleEmailOTP);
 
-userRouter.post("resetPassword", handlePasswordReset);
+userRouter.post("/resetPassword", handlePasswordReset);
 
 userRouter.post("/verifyPasswordRestOTP", verifyPasswordResetOTP);
+
+userRouter.post("/login", handleLogin);
+
+userRouter.get("/getUserDetails", authUser, getUserInfo)
 export {userRouter};
